@@ -34,6 +34,37 @@
         <button onclick="logout()">Logout</button>
     </div>
 
+    <div id="leaderboard" style="display: none;">
+        <h2>Leaderboard</h2>
+        <div id="leaderboard-content"></div>
+    </div>
+
     <script src="strava-app.js"></script>
+
+    <script>
+    function renderLeaderboard(leaderboard) {
+        const container = document.getElementById('leaderboard-content');
+        container.innerHTML = leaderboard.map((entry, i) =>
+            `<div>${i + 1}. ${entry.name}: ${formatTime(entry.time)}</div>`
+        ).join('');
+    }
+
+    async function fetchPublicActivities(athleteId, accessToken) {
+        const url = `https://www.strava.com/api/v3/athletes/${athleteId}/activities?per_page=200`;
+        const response = await fetch(url, {
+            headers: { Authorization: `Bearer ${accessToken}` }
+        });
+
+        if (!response.ok) {
+            // If activities are not public, you may get a 403 or an empty array
+            return [];
+        }
+
+        const activities = await response.json();
+        // Optionally, double-check the visibility field (if present)
+        // Some Strava API responses include a 'visibility' or 'private' field
+        return activities.filter(act => !act.private); // Only include public activities
+    }
+    </script>
 </body>
 </html>
