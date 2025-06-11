@@ -1,6 +1,6 @@
 // Your Strava app credentials
 const CLIENT_ID = '164066'; // Replace with your actual Client ID
-const REDIRECT_URI = 'http://localhost:3000/strava-app.html';
+const REDIRECT_URI = 'https://stravademo.netlify.app/strava-app.html';
 const SCOPE = 'read,activity:read';
 
 // DOM elements
