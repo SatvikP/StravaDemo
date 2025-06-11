@@ -172,15 +172,15 @@ async function getFollowing10KLeaderboard(accessToken) {
 
 async function getBest10KTime(athleteId, accessToken, isYou) {
     try {
-        // Get activities from last 12 months
-        const oneYearAgo = new Date();
-        oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+        // Get activities from last 3 months
+        const threeMonthsAgo = new Date();
+        threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
         
         const endpoint = isYou 
             ? 'https://www.strava.com/api/v3/athlete/activities'
             : `https://www.strava.com/api/v3/athletes/${athleteId}/activities`;
             
-        const response = await fetch(`${endpoint}?after=${Math.floor(oneYearAgo.getTime()/1000)}&per_page=200`, {
+        const response = await fetch(`${endpoint}?after=${Math.floor(threeMonthsAgo.getTime()/1000)}&per_page=200`, {
             headers: { 'Authorization': `Bearer ${accessToken}` }
         });
         
