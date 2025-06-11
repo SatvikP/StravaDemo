@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>My Strava Activities</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; }
+        .login-btn { 
+            background: #FC4C02; color: white; padding: 12px 24px; 
+            text-decoration: none; border-radius: 4px; display: inline-block;
+        }
+        .activity { 
+            border: 1px solid #ddd; padding: 15px; margin: 10px 0; 
+            border-radius: 4px; 
+        }
+    </style>
+</head>
+<body>
+    <h1>My Strava Activities</h1>
+    
+    <div id="login-section">
+        <p>Connect your Strava account to see your recent activities:</p>
+        <a href="#" id="login-btn" class="login-btn">Connect with Strava</a>
+    </div>
+    
+    <div id="activities-section" style="display: none;">
+        <h2>Your Recent Activities</h2>
+        <div id="activities-list"></div>
+        <button onclick="logout()">Logout</button>
+    </div>
+
+    <script src="strava-app.js"></script>
+</body>
+</html>
