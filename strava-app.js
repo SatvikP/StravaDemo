@@ -111,3 +111,166 @@ function logout() {
     loginSection.style.display = 'block';
     activitiesSection.style.display = 'none';
 }
+
+// Add this function to get network leaderboard
+async function getFollowing10KLeaderboard(accessToken) {
+    try {
+        // Get your own data first
+        const myProfile = await fetch('https://www.strava.com/api/v3/athlete', {
+            headers: { 'Authorization': `Bearer ${accessToken}` }
+        });
+        const myData = await myProfile.json();
+        
+        // Get your following list
+        const followingResponse = await fetch('https://www.strava.com/api/v3/athlete/following?per_page=200', {
+            headers: { 'Authorization': `Bearer ${accessToken}` }
+        });
+        const following = await followingResponse.json();
+        
+        console.log(`Found ${following.length} athletes you follow`);
+        
+        // Get 10K times for you and your network
+        const leaderboard = [];
+        
+        // Add your own data
+        const myBest10K = await getBest10KTime(myData.id, accessToken, true); // true = it's you
+        if (myBest10K) {
+            leaderboard.push({
+                athlete: myData,
+                bestTime: myBest10K.elapsed_time,
+                activity: myBest10K,
+                isYou: true
+            });
+        }
+        
+        // Add followers' data
+        for (let athlete of following) {
+            const best10K = await getBest10KTime(athlete.id, accessToken, false);
+            if (best10K) {
+                leaderboard.push({
+                    athlete: athlete,
+                    bestTime: best10K.elapsed_time,
+                    activity: best10K,
+                    isYou: false
+                });
+            }
+            
+            // Small delay to avoid rate limits
+            await new Promise(resolve => setTimeout(resolve, 100));
+        }
+        
+        // Sort by best time
+        leaderboard.sort((a, b) => a.bestTime - b.bestTime);
+        
+        return leaderboard;
+        
+    } catch (error) {
+        console.error('Error getting leaderboard:', error);
+        return [];
+    }
+}
+
+async function getBest10KTime(athleteId, accessToken, isYou) {
+    try {
+        // Get activities from last 12 months
+        const oneYearAgo = new Date();
+        oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+        
+        const endpoint = isYou 
+            ? 'https://www.strava.com/api/v3/athlete/activities'
+            : `https://www.strava.com/api/v3/athletes/${athleteId}/activities`;
+            
+        const response = await fetch(`${endpoint}?after=${Math.floor(oneYearAgo.getTime()/1000)}&per_page=200`, {
+            headers: { 'Authorization': `Bearer ${accessToken}` }
+        });
+        
+        if (!response.ok) {
+            console.log(`Could not fetch activities for athlete ${athleteId}`);
+            return null;
+        }
+        
+        const activities = await response.json();
+        
+        // Filter for running activities around 10K (9-11K to catch different routes)
+        const runningActivities = activities.filter(activity => 
+            activity.type === 'Run' && 
+            activity.distance >= 9000 && 
+            activity.distance <= 11000
+        );
+        
+        if (runningActivities.length === 0) return null;
+        
+        // Find the fastest 10K
+        const bestActivity = runningActivities.reduce((best, current) => 
+            current.elapsed_time < best.elapsed_time ? current : best
+        );
+        
+        return bestActivity;
+        
+    } catch (error) {
+        console.log(`Error fetching activities for athlete ${athleteId}:`, error);
+        return null;
+    }
+}
+
+function displayLeaderboard(leaderboard) {
+    const activitiesList = document.getElementById('activities-list');
+    
+    activitiesList.innerHTML = '<h2>10K Leaderboard - Last 12 Months</h2>';
+    
+    if (leaderboard.length === 0) {
+        activitiesList.innerHTML += '<p>No 10K activities found in your network.</p>';
+        return;
+    }
+    
+    leaderboard.forEach((entry, index) => {
+        const minutes = Math.floor(entry.bestTime / 60);
+        const seconds = entry.bestTime % 60;
+        const timeString = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+        
+        const distance = (entry.activity.distance / 1000).toFixed(2);
+        const date = new Date(entry.activity.start_date).toLocaleDateString();
+        
+        const entryDiv = document.createElement('div');
+        entryDiv.className = 'activity';
+        entryDiv.style.backgroundColor = entry.isYou ? '#e8f5e8' : '#f9f9f9';
+        entryDiv.style.border = entry.isYou ? '2px solid #4CAF50' : '1px solid #ddd';
+        
+        entryDiv.innerHTML = `
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <h3>#${index + 1} ${entry.athlete.firstname} ${entry.athlete.lastname} ${entry.isYou ? '(YOU)' : ''}</h3>
+                    <p><strong>Time:</strong> ${timeString}</p>
+                    <p><strong>Distance:</strong> ${distance} km</p>
+                    <p><strong>Date:</strong> ${date}</p>
+                    <p><strong>Activity:</strong> ${entry.activity.name}</p>
+                </div>
+                <div style="font-size: 24px; font-weight: bold; color: #666;">
+                    ${timeString}
+                </div>
+            </div>
+        `;
+        
+        activitiesList.appendChild(entryDiv);
+    });
+}
+
+// Update the showActivities function to show leaderboard instead
+async function showActivities(accessToken) {
+    try {
+        // Hide login, show activities
+        loginSection.style.display = 'none';
+        activitiesSection.style.display = 'block';
+        
+        // Show loading message
+        activitiesList.innerHTML = '<p>Loading 10K leaderboard from your network... This may take a minute.</p>';
+        
+        // Get and display leaderboard
+        const leaderboard = await getFollowing10KLeaderboard(accessToken);
+        displayLeaderboard(leaderboard);
+        
+    } catch (error) {
+        console.error('Error loading leaderboard:', error);
+        activitiesList.innerHTML = '<p>Error loading leaderboard. Check console for details.</p>';
+    }
+}
