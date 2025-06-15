@@ -138,13 +138,13 @@ async function getFollowingPRsLeaderboard(accessToken) {
         const myData = await myProfile.json();
         console.log('Your profile:', myData);
         
-        // Get your following list
-        const followingResponse = await fetch('https://www.strava.com/api/v3/athlete/following?per_page=200', {
+        // Get your following list - using the correct endpoint
+        const followingResponse = await fetch('https://www.strava.com/api/v3/athlete/friends', {
             headers: { 'Authorization': `Bearer ${accessToken}` }
         });
         
         if (!followingResponse.ok) {
-            console.error('Error fetching following list:', followingResponse.status);
+            console.error('Error fetching friends list:', followingResponse.status);
             return {};
         }
         
@@ -174,22 +174,26 @@ async function getFollowingPRsLeaderboard(accessToken) {
         }
         
         // Add followers' data
-        for (let athlete of following) {
-            console.log(`Getting PRs for ${athlete.firstname} ${athlete.lastname}...`);
-            for (const [distance, range] of Object.entries(RUNNING_DISTANCES)) {
-                const bestTime = await getBestTimeForDistance(athlete.id, accessToken, false, range);
-                if (bestTime) {
-                    leaderboard[distance].push({
-                        athlete: athlete,
-                        bestTime: bestTime.elapsed_time,
-                        activity: bestTime,
-                        isYou: false
-                    });
+        if (Array.isArray(following)) {
+            for (let athlete of following) {
+                console.log(`Getting PRs for ${athlete.firstname} ${athlete.lastname}...`);
+                for (const [distance, range] of Object.entries(RUNNING_DISTANCES)) {
+                    const bestTime = await getBestTimeForDistance(athlete.id, accessToken, false, range);
+                    if (bestTime) {
+                        leaderboard[distance].push({
+                            athlete: athlete,
+                            bestTime: bestTime.elapsed_time,
+                            activity: bestTime,
+                            isYou: false
+                        });
+                    }
                 }
+                
+                // Small delay to avoid rate limits
+                await new Promise(resolve => setTimeout(resolve, 100));
             }
-            
-            // Small delay to avoid rate limits
-            await new Promise(resolve => setTimeout(resolve, 100));
+        } else {
+            console.log('No friends found or error in friends list');
         }
         
         // Sort each distance's leaderboard by best time
