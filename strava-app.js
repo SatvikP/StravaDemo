@@ -66,43 +66,191 @@ async function exchangeCodeForToken(authCode) {
     }
 }
 
-async function showActivities(accessToken) {
+// Define common running distances in meters
+const RUNNING_DISTANCES = {
+    '5K': { min: 4900, max: 5100, name: '5K' },
+    '10K': { min: 9900, max: 10100, name: '10K' },
+    'Half Marathon': { min: 21000, max: 21200, name: 'Half Marathon' },
+    'Marathon': { min: 42100, max: 42300, name: 'Marathon' }
+};
+
+async function getBestTimeForDistance(athleteId, accessToken, isYou, distance) {
     try {
-        const response = await fetch('https://www.strava.com/api/v3/athlete/activities?per_page=10', {
-            headers: {
-                'Authorization': `Bearer ${accessToken}`
-            }
+        const threeMonthsAgo = new Date();
+        threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
+        
+        const endpoint = isYou 
+            ? 'https://www.strava.com/api/v3/athlete/activities'
+            : `https://www.strava.com/api/v3/athletes/${athleteId}/activities`;
+            
+        const response = await fetch(`${endpoint}?after=${Math.floor(threeMonthsAgo.getTime()/1000)}&per_page=200`, {
+            headers: { 'Authorization': `Bearer ${accessToken}` }
         });
+        
+        if (!response.ok) {
+            console.log(`Could not fetch activities for athlete ${athleteId}`);
+            return null;
+        }
         
         const activities = await response.json();
         
+        // Filter for running activities within the distance range
+        const runningActivities = activities.filter(activity => 
+            activity.type === 'Run' && 
+            activity.distance >= distance.min && 
+            activity.distance <= distance.max
+        );
+        
+        if (runningActivities.length === 0) return null;
+        
+        // Find the fastest time
+        const bestActivity = runningActivities.reduce((best, current) => 
+            current.elapsed_time < best.elapsed_time ? current : best
+        );
+        
+        return bestActivity;
+        
+    } catch (error) {
+        console.log(`Error fetching activities for athlete ${athleteId}:`, error);
+        return null;
+    }
+}
+
+async function getFollowingPRsLeaderboard(accessToken) {
+    try {
+        // Get your own data first
+        const myProfile = await fetch('https://www.strava.com/api/v3/athlete', {
+            headers: { 'Authorization': `Bearer ${accessToken}` }
+        });
+        const myData = await myProfile.json();
+        
+        // Get your following list
+        const followingResponse = await fetch('https://www.strava.com/api/v3/athlete/following?per_page=200', {
+            headers: { 'Authorization': `Bearer ${accessToken}` }
+        });
+        const following = await followingResponse.json();
+        
+        console.log(`Found ${following.length} athletes you follow`);
+        
+        // Get PRs for all distances
+        const leaderboard = {};
+        
+        // Initialize leaderboard for each distance
+        Object.keys(RUNNING_DISTANCES).forEach(distance => {
+            leaderboard[distance] = [];
+        });
+        
+        // Add your own data
+        for (const [distance, range] of Object.entries(RUNNING_DISTANCES)) {
+            const bestTime = await getBestTimeForDistance(myData.id, accessToken, true, range);
+            if (bestTime) {
+                leaderboard[distance].push({
+                    athlete: myData,
+                    bestTime: bestTime.elapsed_time,
+                    activity: bestTime,
+                    isYou: true
+                });
+            }
+        }
+        
+        // Add followers' data
+        for (let athlete of following) {
+            for (const [distance, range] of Object.entries(RUNNING_DISTANCES)) {
+                const bestTime = await getBestTimeForDistance(athlete.id, accessToken, false, range);
+                if (bestTime) {
+                    leaderboard[distance].push({
+                        athlete: athlete,
+                        bestTime: bestTime.elapsed_time,
+                        activity: bestTime,
+                        isYou: false
+                    });
+                }
+            }
+            
+            // Small delay to avoid rate limits
+            await new Promise(resolve => setTimeout(resolve, 100));
+        }
+        
+        // Sort each distance's leaderboard by best time
+        Object.keys(leaderboard).forEach(distance => {
+            leaderboard[distance].sort((a, b) => a.bestTime - b.bestTime);
+        });
+        
+        return leaderboard;
+        
+    } catch (error) {
+        console.error('Error getting leaderboard:', error);
+        return {};
+    }
+}
+
+function displayPRsLeaderboard(leaderboard) {
+    const activitiesList = document.getElementById('activities-list');
+    
+    activitiesList.innerHTML = '<h2>Running PRs Leaderboard - Last 3 Months</h2>';
+    
+    let hasAnyPRs = false;
+    
+    for (const [distance, entries] of Object.entries(leaderboard)) {
+        if (entries.length > 0) {
+            hasAnyPRs = true;
+            activitiesList.innerHTML += `<h3>${distance}</h3>`;
+            
+            entries.forEach((entry, index) => {
+                const minutes = Math.floor(entry.bestTime / 60);
+                const seconds = entry.bestTime % 60;
+                const timeString = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+                
+                const distance = (entry.activity.distance / 1000).toFixed(2);
+                const date = new Date(entry.activity.start_date).toLocaleDateString();
+                
+                const entryDiv = document.createElement('div');
+                entryDiv.className = 'activity';
+                entryDiv.style.backgroundColor = entry.isYou ? '#e8f5e8' : '#f9f9f9';
+                entryDiv.style.border = entry.isYou ? '2px solid #4CAF50' : '1px solid #ddd';
+                
+                entryDiv.innerHTML = `
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <h3>#${index + 1} ${entry.athlete.firstname} ${entry.athlete.lastname} ${entry.isYou ? '(YOU)' : ''}</h3>
+                            <p><strong>Time:</strong> ${timeString}</p>
+                            <p><strong>Distance:</strong> ${distance} km</p>
+                            <p><strong>Date:</strong> ${date}</p>
+                            <p><strong>Activity:</strong> ${entry.activity.name}</p>
+                        </div>
+                        <div style="font-size: 24px; font-weight: bold; color: #666;">
+                            ${timeString}
+                        </div>
+                    </div>
+                `;
+                
+                activitiesList.appendChild(entryDiv);
+            });
+        }
+    }
+    
+    if (!hasAnyPRs) {
+        activitiesList.innerHTML += '<p>No running PRs found in your network for the last 3 months.</p>';
+    }
+}
+
+// Update the showActivities function to show PRs leaderboard
+async function showActivities(accessToken) {
+    try {
         // Hide login, show activities
         loginSection.style.display = 'none';
         activitiesSection.style.display = 'block';
         
-        // Display activities
-        activitiesList.innerHTML = '';
-        activities.forEach(activity => {
-            const activityDiv = document.createElement('div');
-            activityDiv.className = 'activity';
-            
-            const distance = (activity.distance / 1000).toFixed(2); // Convert to km
-            const date = new Date(activity.start_date).toLocaleDateString();
-            
-            activityDiv.innerHTML = `
-                <h3>${activity.name}</h3>
-                <p><strong>Type:</strong> ${activity.type}</p>
-                <p><strong>Distance:</strong> ${distance} km</p>
-                <p><strong>Date:</strong> ${date}</p>
-                <p><strong>Moving Time:</strong> ${Math.floor(activity.moving_time / 60)} minutes</p>
-            `;
-            
-            activitiesList.appendChild(activityDiv);
-        });
+        // Show loading message
+        activitiesList.innerHTML = '<p>Loading running PRs leaderboard from your network... This may take a minute.</p>';
+        
+        // Get and display leaderboard
+        const leaderboard = await getFollowingPRsLeaderboard(accessToken);
+        displayPRsLeaderboard(leaderboard);
         
     } catch (error) {
-        console.error('Error fetching activities:', error);
-        alert('Error loading activities');
+        console.error('Error loading leaderboard:', error);
+        activitiesList.innerHTML = '<p>Error loading leaderboard. Check console for details.</p>';
     }
 }
 
