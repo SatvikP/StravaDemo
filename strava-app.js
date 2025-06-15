@@ -83,16 +83,19 @@ async function getBestTimeForDistance(athleteId, accessToken, isYou, distance) {
             ? 'https://www.strava.com/api/v3/athlete/activities'
             : `https://www.strava.com/api/v3/athletes/${athleteId}/activities`;
             
+        console.log(`Fetching activities for ${isYou ? 'you' : 'athlete ' + athleteId} for distance ${distance.name}`);
+        
         const response = await fetch(`${endpoint}?after=${Math.floor(threeMonthsAgo.getTime()/1000)}&per_page=200`, {
             headers: { 'Authorization': `Bearer ${accessToken}` }
         });
         
         if (!response.ok) {
-            console.log(`Could not fetch activities for athlete ${athleteId}`);
+            console.log(`Error fetching activities: ${response.status} ${response.statusText}`);
             return null;
         }
         
         const activities = await response.json();
+        console.log(`Found ${activities.length} total activities`);
         
         // Filter for running activities within the distance range
         const runningActivities = activities.filter(activity => 
@@ -101,6 +104,8 @@ async function getBestTimeForDistance(athleteId, accessToken, isYou, distance) {
             activity.distance <= distance.max
         );
         
+        console.log(`Found ${runningActivities.length} activities in ${distance.name} range`);
+        
         if (runningActivities.length === 0) return null;
         
         // Find the fastest time
@@ -108,10 +113,12 @@ async function getBestTimeForDistance(athleteId, accessToken, isYou, distance) {
             current.elapsed_time < best.elapsed_time ? current : best
         );
         
+        console.log(`Best ${distance.name} time: ${Math.floor(bestActivity.elapsed_time/60)}:${(bestActivity.elapsed_time%60).toString().padStart(2, '0')}`);
+        
         return bestActivity;
         
     } catch (error) {
-        console.log(`Error fetching activities for athlete ${athleteId}:`, error);
+        console.error(`Error fetching activities for athlete ${athleteId}:`, error);
         return null;
     }
 }
@@ -122,14 +129,26 @@ async function getFollowingPRsLeaderboard(accessToken) {
         const myProfile = await fetch('https://www.strava.com/api/v3/athlete', {
             headers: { 'Authorization': `Bearer ${accessToken}` }
         });
+        
+        if (!myProfile.ok) {
+            console.error('Error fetching your profile:', myProfile.status);
+            return {};
+        }
+        
         const myData = await myProfile.json();
+        console.log('Your profile:', myData);
         
         // Get your following list
         const followingResponse = await fetch('https://www.strava.com/api/v3/athlete/following?per_page=200', {
             headers: { 'Authorization': `Bearer ${accessToken}` }
         });
-        const following = await followingResponse.json();
         
+        if (!followingResponse.ok) {
+            console.error('Error fetching following list:', followingResponse.status);
+            return {};
+        }
+        
+        const following = await followingResponse.json();
         console.log(`Found ${following.length} athletes you follow`);
         
         // Get PRs for all distances
@@ -142,6 +161,7 @@ async function getFollowingPRsLeaderboard(accessToken) {
         
         // Add your own data
         for (const [distance, range] of Object.entries(RUNNING_DISTANCES)) {
+            console.log(`Getting your ${distance} PR...`);
             const bestTime = await getBestTimeForDistance(myData.id, accessToken, true, range);
             if (bestTime) {
                 leaderboard[distance].push({
@@ -155,6 +175,7 @@ async function getFollowingPRsLeaderboard(accessToken) {
         
         // Add followers' data
         for (let athlete of following) {
+            console.log(`Getting PRs for ${athlete.firstname} ${athlete.lastname}...`);
             for (const [distance, range] of Object.entries(RUNNING_DISTANCES)) {
                 const bestTime = await getBestTimeForDistance(athlete.id, accessToken, false, range);
                 if (bestTime) {
